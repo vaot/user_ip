@@ -6,6 +6,7 @@ import (
   "strings"
   "unicode"
   "bytes"
+  "github.com/kataras/iris"
 )
 
 type PrivateAddressesRange struct {
@@ -73,8 +74,34 @@ func ignoreIp(ip net.IP) bool {
   return !ip.IsGlobalUnicast() || isPrivateAddress(ip)
 }
 
-// =====================================================================================
+func findRealIP(ipAddress *string, availableIps []string) {
+  if len(availableIps) >= MAX_IP_SEARCH {
+    availableIps = availableIps[:MAX_IP_SEARCH]
+  }
 
+  for _, ip := range availableIps {
+    ip = removeWhiteSpaces(ip)
+    userIp := net.ParseIP(ip)
+
+    if ignoreIp(userIp) {
+      continue
+    } else {
+      *ipAddress = ip
+    }
+  }
+}
+
+// =====================================================================================
+func GetFromContext(ctx *iris.Context) string {
+  var ipAddress string
+
+  for _, headerProperty := range HEADER_IP_KEYS {
+    availableIps := strings.Split(string(ctx.RequestCtx.Request.Header.Peek(headerProperty)), ",")
+    findRealIP(&ipAddress, availableIps)
+  }
+
+  return ipAddress
+}
 
 func Get(req *http.Request) string {
   var ipAddress string
@@ -84,22 +111,7 @@ func Get(req *http.Request) string {
     // We will only search through up to MAX_IP_SEARCH, we should not be looking
     // for all of them, since client may be playing with X-Forwarded-For
     availableIps := strings.Split(req.Header.Get(headerProperty), ",")
-
-    if len(availableIps) >= MAX_IP_SEARCH {
-      availableIps = availableIps[:MAX_IP_SEARCH]
-    }
-
-    for _, ip := range availableIps {
-      ip = removeWhiteSpaces(ip)
-      userIp := net.ParseIP(ip)
-
-      if ignoreIp(userIp) {
-        continue
-      } else {
-        ipAddress = ip
-        return ipAddress
-      }
-    }
+    findRealIP(&ipAddress, availableIps)
   }
 
   return ipAddress
